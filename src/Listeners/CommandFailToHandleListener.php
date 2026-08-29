@@ -1,16 +1,6 @@
 <?php
 
-/** @noinspection PhpDocSignatureInspection */
-
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify\Listeners;
 
@@ -21,7 +11,6 @@ use Hyperf\Event\Contract\ListenerInterface;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
 
-use function Hyperf\Collection\collect;
 use function Hyperf\Config\config;
 
 class CommandFailToHandleListener implements ListenerInterface
@@ -42,12 +31,14 @@ class CommandFailToHandleListener implements ListenerInterface
      */
     public function process(object $event): void
     {
-        $channels = collect(config('exception_notify.channels'))->keys();
-
-        if (empty($channels)) {
+        if (! config('exception_notify.enabled_cli', true)) {
             return;
         }
 
-        $this->exceptionNotify->onChannel(...$channels)->report($event->getThrowable());
+        if (! $event instanceof FailToHandle) {
+            return;
+        }
+
+        $this->exceptionNotify->report($event->getThrowable());
     }
 }

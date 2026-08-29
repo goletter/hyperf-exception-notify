@@ -1,14 +1,6 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify\Channels;
 
@@ -17,11 +9,11 @@ use Guanguans\Notify\Contracts\MessageInterface;
 
 abstract class NotifyAbstractChannel extends AbstractChannel
 {
-    protected Client $client;
-
-    public function __construct(Client $client)
-    {
-        $this->client = $client;
+    public function __construct(
+        protected Client $client,
+        string $name = ''
+    ) {
+        parent::__construct($name);
     }
 
     public function report(string $report)

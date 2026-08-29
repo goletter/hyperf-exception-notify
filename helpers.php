@@ -1,14 +1,6 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify;
 
@@ -48,7 +40,11 @@ function exception_notify_report_if(mixed $condition, mixed $exception, null|arr
 
 function exception_notify_report(mixed $exception, null|array|string $channels = null): void
 {
-    $exception instanceof Throwable or $exception = new Exception($exception);
+    $exception instanceof Throwable or $exception = new Exception((string) $exception);
 
-    make(ExceptionNotify::class)->onChannel($channels)->report($exception);
+    $notify = make(ExceptionNotify::class);
+    if ($channels !== null) {
+        $notify->onChannel($channels);
+    }
+    $notify->report($exception);
 }

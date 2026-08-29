@@ -1,14 +1,6 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify\Sanitizers;
 
@@ -16,8 +8,12 @@ use Closure;
 
 class AppendContentSanitizer
 {
-    public function handle(string $report, Closure $next, string $content): string
+    public function handle(string $report, Closure $next, ?string $content = null): string
     {
-        return $next($report . $content);
+        if ($content !== null && $content !== '') {
+            $report .= $content;
+        }
+
+        return $next($report);
     }
 }

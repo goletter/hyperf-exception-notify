@@ -60,7 +60,7 @@
     },
     "extra": {
         "hyperf": {
-            "config": "ELLa123\\HyperfExceptionNotify\\ConfigProvider"
+            "config": "Goletter\\HyperfExceptionNotify\\ConfigProvider"
         }
     }
 }

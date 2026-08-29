@@ -1,30 +1,14 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
+
 use Goletter\HyperfExceptionNotify\Collectors\ApplicationCollector;
-use Goletter\HyperfExceptionNotify\Collectors\ChoreCollector;
 use Goletter\HyperfExceptionNotify\Collectors\ExceptionBasicCollector;
 use Goletter\HyperfExceptionNotify\Collectors\ExceptionTraceCollector;
-use Goletter\HyperfExceptionNotify\Collectors\PhpInfoCollector;
 use Goletter\HyperfExceptionNotify\Collectors\RequestBasicCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestCookieCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestFileCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestHeaderCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestMiddlewareCollector;
 use Goletter\HyperfExceptionNotify\Collectors\RequestPostCollector;
 use Goletter\HyperfExceptionNotify\Collectors\RequestQueryCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestServerCollector;
-use Goletter\HyperfExceptionNotify\Collectors\RequestSessionCollector;
 use Goletter\HyperfExceptionNotify\Sanitizers\AppendContentSanitizer;
-use Goletter\HyperfExceptionNotify\Sanitizers\FixPrettyJsonSanitizer;
 use Goletter\HyperfExceptionNotify\Sanitizers\LengthLimitSanitizer;
 
 use function Hyperf\Support\env;
@@ -32,130 +16,110 @@ use function Hyperf\Support\env;
 return [
     /*
     |--------------------------------------------------------------------------
-    | Enable exception notification report switch.
+    | Enable exception notification.
     |--------------------------------------------------------------------------
-    |
-    | If set to false, the exception notification report will not be enabled.
-    |
     */
     'enabled' => (bool) env('EXCEPTION_NOTIFY_ENABLED', true),
 
     /*
     |--------------------------------------------------------------------------
-    | Enable command exception notification report switch.
+    | Enable CLI / command exception notification.
     |--------------------------------------------------------------------------
-    |
-    | If set to false or enabled set to false, the exception notification report will not be enabled.
-    |
     */
     'enabled_cli' => (bool) env('EXCEPTION_NOTIFY_ENABLED_CLI', true),
 
     /*
     |--------------------------------------------------------------------------
-    | A list of the application environments that are reported.
+    | Environments that should report. Supports wildcards via Str::is().
     |--------------------------------------------------------------------------
-    |
-    | Here you may specify a list of the application environments that should
-    | be reported.
-    |
-    | ```
-    | [production, local]
-    | ```
     */
-    'env' => ['*'],
+    'env' => array_filter(array_map('trim', explode(',', (string) env('EXCEPTION_NOTIFY_ENV', 'production,prod')))),
 
     /*
     |--------------------------------------------------------------------------
-    | A list of the exception types that are not reported.
+    | Exception types that should not be reported.
     |--------------------------------------------------------------------------
-    |
-    | Here you may specify a list of the exception types that should not be
-    | reported.
-    |
-    | ```
-    | [
-    |     HttpResponseException::class,
-    |     HttpException::class,
-    | ]
-    | ```
     */
-    'dont_report' => [],
-
-    /*
-    |--------------------------------------------------------------------------
-    | List of collectors.
-    |--------------------------------------------------------------------------
-    |
-    | Responsible for collecting the exception data.
-    |
-    */
-    'collector' => [
-        ApplicationCollector::class,
-        // PhpInfoCollector::class,
-        // ChoreCollector::class,
-        ExceptionBasicCollector::class,
-        ExceptionTraceCollector::class,
-        RequestBasicCollector::class,
-        // RequestSessionCollector::class,
-        // RequestCookieCollector::class,
-        // RequestFileCollector::class,
-        // RequestHeaderCollector::class,
-        // RequestMiddlewareCollector::class,
-        RequestPostCollector::class,
-        RequestQueryCollector::class,
-        RequestServerCollector::class,
+    'dont_report' => [
+        // \Hyperf\HttpMessage\Exception\NotFoundHttpException::class,
+        // \Hyperf\Validation\ValidationException::class,
     ],
 
     /*
-     |--------------------------------------------------------------------------
-     | Exception notification rate limiter.
-     |--------------------------------------------------------------------------
-     |
-     | The exception notification rate limiter is used to prevent sending
-     | exception notification to the same channel too frequently.
-     |
-     */
+    |--------------------------------------------------------------------------
+    | Report format: markdown (IM friendly) | json
+    |--------------------------------------------------------------------------
+    */
+    'format' => env('EXCEPTION_NOTIFY_FORMAT', 'markdown'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Push IM notifications via async-queue (log channel always sync).
+    |--------------------------------------------------------------------------
+    */
+    'async' => (bool) env('EXCEPTION_NOTIFY_ASYNC', true),
+    'queue' => env('EXCEPTION_NOTIFY_QUEUE', 'default'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Channels that receive reports. Defaults to [default] if empty.
+    | Example: ['dingTalk'] or ['feiShu', 'log']
+    |--------------------------------------------------------------------------
+    */
+    'report_channels' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('EXCEPTION_NOTIFY_CHANNELS', env('EXCEPTION_NOTIFY_DEFAULT_CHANNEL', 'log')))
+    ))),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Collectors.
+    |--------------------------------------------------------------------------
+    */
+    'collector' => [
+        ApplicationCollector::class,
+        ExceptionBasicCollector::class,
+        ExceptionTraceCollector::class,
+        RequestBasicCollector::class,
+        RequestPostCollector::class,
+        RequestQueryCollector::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate limiter (same exception fingerprint).
+    |--------------------------------------------------------------------------
+    */
     'rate_limiter' => [
-        'max_attempts' => (int) env('EXCEPTION_NOTIFY_LIMIT', env('APP_ENV') === 'prod' ? 1 : 50),
-        'decay_seconds' => 300,
+        'max_attempts' => (int) env('EXCEPTION_NOTIFY_LIMIT', env('APP_ENV') === 'prod' || env('APP_ENV') === 'production' ? 1 : 50),
+        'decay_seconds' => (int) env('EXCEPTION_NOTIFY_DECAY', 300),
     ],
 
     /*
     |--------------------------------------------------------------------------
     | Report title.
     |--------------------------------------------------------------------------
-    |
-    | The title of the exception notification report.
-    |
     */
-    'title' => env('EXCEPTION_NOTIFY_REPORT_TITLE', sprintf('%s application exception report', env('APP_ENV'))),
+    'title' => env('EXCEPTION_NOTIFY_REPORT_TITLE', sprintf('[%s] %s exception', env('APP_ENV', 'local'), env('APP_NAME', 'app'))),
 
     /*
     |--------------------------------------------------------------------------
-    | default channel.
+    | Default channel name (used when report_channels is empty).
     |--------------------------------------------------------------------------
-    |
-    | The default channel of the exception notification report.
-    |
     */
     'default' => env('EXCEPTION_NOTIFY_DEFAULT_CHANNEL', 'log'),
 
     /*
-     |--------------------------------------------------------------------------
-     | Supported channels.
-     |--------------------------------------------------------------------------
-     |
-     | Here you may specify a list of the supported channels.
-     |
-     */
+    |--------------------------------------------------------------------------
+    | Channel definitions.
+    |--------------------------------------------------------------------------
+    */
     'channels' => [
-        // Log
         'log' => [
             'driver' => 'log',
             'channel' => env('EXCEPTION_NOTIFY_LOG_CHANNEL', 'default'),
             'level' => env('EXCEPTION_NOTIFY_LOG_LEVEL', 'error'),
-            'sanitizers' => [
-            ],
+            'sanitizers' => [],
         ],
 
         /**
@@ -167,11 +131,12 @@ return [
             'token' => env('EXCEPTION_NOTIFY_FEISHU_TOKEN'),
             'secret' => env('EXCEPTION_NOTIFY_FEISHU_SECRET'),
             'keyword' => env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'),
-            'sanitizers' => [
+            'sanitizers' => array_values(array_filter([
                 sprintf('%s:%s', LengthLimitSanitizer::class, 30720),
-                FixPrettyJsonSanitizer::class,
-                sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_FEISHU_KEYWORD')),
-            ],
+                env('EXCEPTION_NOTIFY_FEISHU_KEYWORD')
+                    ? sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'))
+                    : null,
+            ])),
         ],
 
         /**
@@ -183,11 +148,15 @@ return [
             'token' => env('EXCEPTION_NOTIFY_DINGTALK_TOKEN'),
             'secret' => env('EXCEPTION_NOTIFY_DINGTALK_SECRET'),
             'keyword' => env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD'),
-            'pipes' => [
-                sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD')),
-                FixPrettyJsonSanitizer::class,
-                sprintf('%s:%s', LengthLimitSanitizer::class, 30720),
-            ],
+            'atMobiles' => [],
+            'atDingtalkIds' => [],
+            'isAtAll' => false,
+            'sanitizers' => array_values(array_filter([
+                env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD')
+                    ? sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD'))
+                    : null,
+                sprintf('%s:%s', LengthLimitSanitizer::class, 20000),
+            ])),
         ],
 
         /**
@@ -197,9 +166,8 @@ return [
         'weWork' => [
             'driver' => 'weWork',
             'token' => env('EXCEPTION_NOTIFY_WEWORK_TOKEN'),
-            'pipes' => [
-                FixPrettyJsonSanitizer::class,
-                sprintf('%s:%s', LengthLimitSanitizer::class, 5120),
+            'sanitizers' => [
+                sprintf('%s:%s', LengthLimitSanitizer::class, 4096),
             ],
         ],
     ],

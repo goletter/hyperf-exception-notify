@@ -1,27 +1,21 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify\Channels;
 
 use Goletter\HyperfExceptionNotify\Contracts\ChannelContract;
-use Hyperf\Stringable\Str;
-
-use function Hyperf\Support\class_basename;
 
 abstract class AbstractChannel implements ChannelContract
 {
+    public function __construct(
+        protected string $name = ''
+    ) {
+    }
+
     public function getName(): string
     {
-        return Str::lower(Str::beforeLast(class_basename($this), 'AbstractChannel'));
+        return $this->name;
     }
 
     abstract public function report(string $report);

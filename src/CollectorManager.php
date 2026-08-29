@@ -1,20 +1,13 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify;
 
 use Goletter\HyperfExceptionNotify\Contracts\CollectorContract;
 use Goletter\HyperfExceptionNotify\Contracts\ExceptionAwareContract;
 use Goletter\HyperfExceptionNotify\Exceptions\InvalidArgumentException;
+use Goletter\HyperfExceptionNotify\Support\ReportFormatter;
 use Hyperf\Support\Fluent;
 use Throwable;
 
@@ -24,15 +17,8 @@ use function Hyperf\Support\make;
 
 class CollectorManager extends Fluent
 {
-    protected int $time;
-
     /**
      * @throws InvalidArgumentException
-     *
-     * @noinspection MagicMethodsValidityInspection
-     * @noinspection MagicMethodsValidityInspection
-     * @noinspection PhpMissingParentConstructorInspection
-     * @noinspection MissingParentCallInspection
      */
     public function __construct()
     {
@@ -41,6 +27,7 @@ class CollectorManager extends Fluent
                 if (! is_array($parameters)) {
                     [$parameters, $class] = [[], $parameters];
                 }
+
                 return make($class, $parameters);
             })
             ->values()
@@ -52,9 +39,6 @@ class CollectorManager extends Fluent
     }
 
     /**
-     * @noinspection PhpMissingParentCallCommonInspection
-     * @noinspection MissingParentCallInspection
-     *
      * @param array-key $offset
      *
      * @throws InvalidArgumentException
@@ -71,14 +55,32 @@ class CollectorManager extends Fluent
         $this->attributes[$offset] = $value;
     }
 
-    public function toReport(Throwable $throwable): string
+    /**
+     * @return array<string, mixed>
+     */
+    public function toPayload(Throwable $throwable): array
     {
         return collect($this)
             ->mapWithKeys(static function (CollectorContract $collector) use ($throwable): array {
                 $collector instanceof ExceptionAwareContract and $collector->setException($throwable);
 
-                return [$collector->name() => $collector->collect()];
+                try {
+                    return [$collector->name() => $collector->collect()];
+                } catch (Throwable) {
+                    return [$collector->name() => []];
+                }
             })
-            ->toJson(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+            ->all();
+    }
+
+    public function toReport(Throwable $throwable): string
+    {
+        $payload = $this->toPayload($throwable);
+        $formatter = make(ReportFormatter::class);
+        $format = (string) config('exception_notify.format', 'markdown');
+
+        return $format === 'json'
+            ? $formatter->toJson($payload)
+            : $formatter->toMarkdown($payload, $throwable);
     }
 }

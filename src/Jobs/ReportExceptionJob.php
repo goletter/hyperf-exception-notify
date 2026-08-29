@@ -1,86 +1,63 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace Goletter\HyperfExceptionNotify\Jobs;
 
 use Goletter\HyperfExceptionNotify\Channels\AbstractChannel;
 use Goletter\HyperfExceptionNotify\Events\ReportedEvent;
 use Goletter\HyperfExceptionNotify\Events\ReportingEvent;
+use Goletter\HyperfExceptionNotify\ExceptionNotify;
+use Hyperf\AsyncQueue\Job;
 use Hyperf\Context\ApplicationContext;
 use Hyperf\Pipeline\Pipeline;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
+use Throwable;
 
 use function Goletter\Utils\event;
+use function Goletter\Utils\stdoutLogger;
 use function Hyperf\Config\config;
 
-class ReportExceptionJob
+class ReportExceptionJob extends Job
 {
-    protected AbstractChannel $channel;
-
-    protected string $report;
-
-    protected string $pipedReport = '';
-
-    public function __construct(AbstractChannel $channel, string $report)
-    {
-        $this->channel = $channel;
-        $this->report = $report;
-        $this->pipedReport = $this->pipelineReport($report);
+    public function __construct(
+        protected string $channelName,
+        protected string $report,
+    ) {
     }
 
-    /**
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
-     */
     public function handle(): void
     {
-        $this->fireReportingEvent($this->pipedReport);
-        $result = $this->channel->report($this->pipedReport);
-        $this->fireReportedEvent($result);
+        try {
+            $notify = ApplicationContext::getContainer()->get(ExceptionNotify::class);
+            /** @var AbstractChannel $channel */
+            $channel = $notify->driver($this->channelName);
+            $pipedReport = $this->pipelineReport($channel, $this->report);
+
+            event(new ReportingEvent($channel, $pipedReport));
+            $result = $channel->report($pipedReport);
+            event(new ReportedEvent($channel, $result));
+        } catch (Throwable $throwable) {
+            stdoutLogger()->error('Exception notify failed: ' . $throwable->getMessage(), [
+                'channel' => $this->channelName,
+                'exception' => $throwable,
+            ]);
+        }
     }
 
-    protected function pipelineReport(string $report): string
+    protected function pipelineReport(AbstractChannel $channel, string $report): string
     {
-        return (new Pipeline(ApplicationContext::getContainer()))
-            ->send($report)
-            ->through($this->getChannelPipeline())
-            ->then(static fn ($report) => $report);
-    }
-
-    protected function getChannelPipeline(): array
-    {
-        return config(
-            sprintf('exception_notify.channels.%s.sanitizers', $this->channel->getName()),
+        $pipes = config(
+            sprintf('exception_notify.channels.%s.sanitizers', $channel->getName()),
             []
         );
-    }
 
-    /**
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
-     */
-    protected function fireReportingEvent(string $report): void
-    {
-        event(new ReportingEvent($this->channel, $report));
-    }
+        if ($pipes === [] || $pipes === null) {
+            return $report;
+        }
 
-    /**
-     * @param mixed $result
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
-     */
-    protected function fireReportedEvent($result): void
-    {
-        event(new ReportedEvent($this->channel, $result));
+        return (new Pipeline(ApplicationContext::getContainer()))
+            ->send($report)
+            ->through((array) $pipes)
+            ->then(static fn ($report) => $report);
     }
 }
