@@ -22,7 +22,7 @@ class RequestQueryCollector extends Collector
     public function collect(): array
     {
         try {
-            return $this->request->query();
+            return $this->mask((array) $this->request->query());
         } catch (Throwable $throwable) {
             return [];
         }

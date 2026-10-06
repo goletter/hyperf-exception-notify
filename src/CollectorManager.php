@@ -62,7 +62,11 @@ class CollectorManager extends Fluent
     {
         return collect($this)
             ->mapWithKeys(static function (CollectorContract $collector) use ($throwable): array {
-                $collector instanceof ExceptionAwareContract and $collector->setException($throwable);
+                if ($collector instanceof ExceptionAwareContract) {
+                    // Collectors are shared across coroutines; never mutate the shared instance.
+                    $collector = clone $collector;
+                    $collector->setException($throwable);
+                }
 
                 try {
                     return [$collector->name() => $collector->collect()];

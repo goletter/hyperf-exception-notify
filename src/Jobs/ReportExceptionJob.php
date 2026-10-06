@@ -33,9 +33,9 @@ class ReportExceptionJob extends Job
             $channel = $notify->driver($this->channelName);
             $pipedReport = $this->pipelineReport($channel, $this->report);
 
-            event(new ReportingEvent($channel, $pipedReport));
+            event()->dispatch(new ReportingEvent($channel, $pipedReport));
             $result = $channel->report($pipedReport);
-            event(new ReportedEvent($channel, $result));
+            event()->dispatch(new ReportedEvent($channel, $result));
         } catch (Throwable $throwable) {
             stdoutLogger()->error('Exception notify failed: ' . $throwable->getMessage(), [
                 'channel' => $this->channelName,

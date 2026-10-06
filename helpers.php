@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Goletter\HyperfExceptionNotify;
 
 use Exception;
+use Hyperf\Context\ApplicationContext;
 use Throwable;
 
-use function Hyperf\Support\make;
 use function Hyperf\Support\value;
 
 /**
@@ -42,9 +42,5 @@ function exception_notify_report(mixed $exception, null|array|string $channels =
 {
     $exception instanceof Throwable or $exception = new Exception((string) $exception);
 
-    $notify = make(ExceptionNotify::class);
-    if ($channels !== null) {
-        $notify->onChannel($channels);
-    }
-    $notify->report($exception);
+    ApplicationContext::getContainer()->get(ExceptionNotify::class)->report($exception, $channels);
 }

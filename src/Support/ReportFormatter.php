@@ -60,7 +60,7 @@ class ReportFormatter
             '',
             '- **Time**: ' . date('Y-m-d H:i:s'),
             '- **App**: ' . ($app['name'] ?? '-'),
-            '- **Env**: ' . ($app['environment'] ?? env('APP_ENV', '-')),
+            '- **Env**: ' . ($app['environment'] ?? config('app_env', '-')),
             '- **Exception**: ' . ($basic['class'] ?? '-'),
             '- **Message**: ' . $this->escape((string) ($basic['message'] ?? '')),
             '- **File**: `' . ($basic['file'] ?? '-') . ':' . ($basic['line'] ?? '-') . '`',

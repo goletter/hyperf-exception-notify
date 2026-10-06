@@ -15,10 +15,21 @@ namespace Goletter\HyperfExceptionNotify\Support;
 use Closure;
 use Hyperf\Redis\Redis;
 use Hyperf\Support\Traits\InteractsWithTime;
+use Throwable;
+
+use function Goletter\Utils\stdoutLogger;
 
 class RateLimiter
 {
     use InteractsWithTime;
+
+    protected const HIT_SCRIPT = <<<'LUA'
+local hits = redis.call('INCR', KEYS[1])
+if hits == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return hits
+LUA;
 
     /**
      * The configured limit object resolvers.
@@ -26,9 +37,37 @@ class RateLimiter
     protected array $limiters = [];
 
     /**
+     * Per-worker fallback counters used while Redis is unavailable.
+     *
+     * @var array<string, array{hits: int, expires_at: int}>
+     */
+    protected array $localHits = [];
+
+    /**
      * Create a new rate limiter instance.
      */
     public function __construct(protected Redis $redis) {}
+
+    /**
+     * Atomically count a hit and report whether it is still within the limit.
+     *
+     * Increment-then-compare keeps concurrent coroutines from all slipping past a
+     * separate "check" step. Falls back to a per-worker counter if Redis fails.
+     */
+    public function hitWithinLimit(string $key, int $maxAttempts, int $decaySeconds = 60): bool
+    {
+        $key = $this->cleanRateLimiterKey($key);
+        $decaySeconds = max(1, $decaySeconds);
+
+        try {
+            $hits = (int) $this->redis->eval(self::HIT_SCRIPT, [$key, $decaySeconds], 1);
+        } catch (Throwable $exception) {
+            stdoutLogger()->warning('Exception notify rate limiter fell back to local counter: ' . $exception->getMessage());
+            $hits = $this->localHit($key, $decaySeconds);
+        }
+
+        return $hits <= $maxAttempts;
+    }
 
     /**
      * Register a named limiter configuration.
@@ -167,5 +206,19 @@ class RateLimiter
         $key = $this->cleanRateLimiterKey($key);
 
         return max(0, $this->redis->get($key . ':timer') - $this->currentTime());
+    }
+
+    protected function localHit(string $key, int $decaySeconds): int
+    {
+        $now = $this->currentTime();
+        foreach ($this->localHits as $name => $entry) {
+            if ($entry['expires_at'] <= $now) {
+                unset($this->localHits[$name]);
+            }
+        }
+
+        $this->localHits[$key] ??= ['hits' => 0, 'expires_at' => $now + $decaySeconds];
+
+        return ++$this->localHits[$key]['hits'];
     }
 }

@@ -9,6 +9,7 @@ namespace Goletter\HyperfExceptionNotify;
 use Goletter\HyperfExceptionNotify\Channels\DingTalkChannel;
 use Goletter\HyperfExceptionNotify\Channels\FeiShuChannel;
 use Goletter\HyperfExceptionNotify\Channels\LogChannel;
+use Goletter\HyperfExceptionNotify\Channels\NotifyAbstractChannel;
 use Goletter\HyperfExceptionNotify\Channels\WeWorkChannel;
 use Goletter\HyperfExceptionNotify\Jobs\ReportExceptionJob;
 use Goletter\HyperfExceptionNotify\Support\Manager;
@@ -18,20 +19,18 @@ use Hyperf\AsyncQueue\Driver\DriverFactory;
 use Hyperf\Context\ApplicationContext;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Stringable\Str;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
 use Throwable;
 
 use function Goletter\Utils\arrayFilterFilled;
 use function Goletter\Utils\stdoutLogger;
 use function Hyperf\Collection\value;
-use function Hyperf\Config\config;
 use function Hyperf\Support\env;
 
 class ExceptionNotify extends Manager
 {
     /**
-     * Channels selected via onChannel() for the next report.
+     * Channels selected via onChannel(). Only ever set on a clone, because this
+     * class is a container singleton shared by all coroutines.
      *
      * @var list<string>
      */
@@ -44,68 +43,41 @@ class ExceptionNotify extends Manager
     ) {
     }
 
-    /**
-     * @param mixed $condition
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
-     */
-    public function reportIf($condition, Throwable $throwable): void
+    public function reportIf(mixed $condition, Throwable $throwable, null|array|string $channels = null): void
     {
-        value($condition) and $this->report($throwable);
+        value($condition) and $this->report($throwable, $channels);
     }
 
     /**
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
+     * @param null|list<string>|string $channels overrides onChannel() / report_channels for this call
      */
-    public function report(Throwable $throwable): void
+    public function report(Throwable $throwable, null|array|string $channels = null): void
     {
         try {
-            if ($this->shouldntReport($throwable)) {
+            if (! $this->passesFilters($throwable)) {
                 return;
             }
-            $this->dispatchReportExceptionJob($throwable);
-        } catch (Throwable $throwable) {
-            stdoutLogger()->error($throwable->getMessage(), ['exception' => $throwable]);
-        } finally {
-            $this->selectedChannels = [];
+
+            $channels = array_values(array_filter(
+                $channels === null ? $this->resolveChannels() : $this->normalizeChannels($channels),
+                fn (string $channel): bool => $this->channelReady($channel)
+            ));
+            if ($channels === [] || $this->isRateLimited($throwable)) {
+                return;
+            }
+
+            $this->dispatchReportExceptionJob($throwable, $channels);
+        } catch (Throwable $exception) {
+            stdoutLogger()->error('Exception notify failed: ' . $exception->getMessage(), ['exception' => $exception]);
         }
     }
 
+    /**
+     * Note: consumes a rate limit attempt when the exception is otherwise reportable.
+     */
     public function shouldntReport(Throwable $throwable): bool
     {
-        if (! $this->config->get('exception_notify.enabled', true)) {
-            return true;
-        }
-
-        $env = (array) $this->config->get('exception_notify.env', ['*']);
-        $appEnv = (string) env('APP_ENV', 'local');
-        if (! Str::is($env, $appEnv)) {
-            return true;
-        }
-
-        foreach ((array) $this->config->get('exception_notify.dont_report', []) as $type) {
-            if (is_string($type) && $throwable instanceof $type) {
-                return true;
-            }
-        }
-
-        // Fingerprint by location + message (not full trace), so rate limit actually works.
-        $fingerprint = md5(implode('|', [
-            $throwable::class,
-            $throwable->getFile(),
-            (string) $throwable->getLine(),
-            $throwable->getMessage(),
-        ]));
-
-        $allowed = $this->rateLimiter->attempt(
-            'exception_notify:' . $fingerprint,
-            (int) $this->config->get('exception_notify.rate_limiter.max_attempts', 1),
-            static fn (): bool => true,
-            (int) $this->config->get('exception_notify.rate_limiter.decay_seconds', 300)
-        );
-
-        return ! $allowed;
+        return ! $this->passesFilters($throwable) || $this->isRateLimited($throwable);
     }
 
     public function shouldReport(Throwable $throwable): bool
@@ -115,22 +87,18 @@ class ExceptionNotify extends Manager
 
     public function getDefaultDriver(): string
     {
-        return (string) config('exception_notify.default', 'log');
+        return (string) $this->config->get('exception_notify.default', 'log');
     }
 
-    public function onChannel(null|array|string $channels = null): self
+    /**
+     * Returns a copy bound to the given channels; the shared instance is left untouched.
+     */
+    public function onChannel(null|array|string $channels = null): static
     {
-        if ($channels === null) {
-            return $this;
-        }
+        $clone = clone $this;
+        $clone->selectedChannels = $channels === null ? [] : $this->normalizeChannels($channels);
 
-        if (is_string($channels)) {
-            $channels = array_filter(array_map('trim', explode(',', $channels)));
-        }
-
-        $this->selectedChannels = array_values(array_unique(array_map('strval', $channels)));
-
-        return $this;
+        return $clone;
     }
 
     /**
@@ -146,32 +114,83 @@ class ExceptionNotify extends Manager
 
         $configured = $this->config->get('exception_notify.report_channels');
         if (is_array($configured) && $configured !== []) {
-            return array_values(array_map('strval', $configured));
+            return $this->normalizeChannels($configured);
         }
 
         return [$this->getDefaultDriver()];
     }
 
-    protected function dispatchReportExceptionJob(Throwable $throwable): void
+    protected function passesFilters(Throwable $throwable): bool
+    {
+        if (! $this->config->get('exception_notify.enabled', true)) {
+            return false;
+        }
+
+        $env = (array) $this->config->get('exception_notify.env', ['*']);
+        $appEnv = (string) $this->config->get('app_env', env('APP_ENV', 'local'));
+        if (! Str::is($env, $appEnv)) {
+            return false;
+        }
+
+        foreach ((array) $this->config->get('exception_notify.dont_report', []) as $type) {
+            if (is_string($type) && $throwable instanceof $type) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function isRateLimited(Throwable $throwable): bool
+    {
+        // Fingerprint by location + message (not full trace), so the same error is grouped.
+        $fingerprint = md5(implode('|', [
+            $throwable::class,
+            $throwable->getFile(),
+            (string) $throwable->getLine(),
+            $throwable->getMessage(),
+        ]));
+
+        return ! $this->rateLimiter->hitWithinLimit(
+            'exception_notify:' . $fingerprint,
+            (int) $this->config->get('exception_notify.rate_limiter.max_attempts', 1),
+            (int) $this->config->get('exception_notify.rate_limiter.decay_seconds', 300)
+        );
+    }
+
+    /**
+     * @param list<string> $channels
+     */
+    protected function dispatchReportExceptionJob(Throwable $throwable, array $channels): void
     {
         $report = $this->collectorManager->toReport($throwable);
         $async = (bool) $this->config->get('exception_notify.async', true);
         $queue = (string) $this->config->get('exception_notify.queue', 'default');
 
-        foreach ($this->resolveChannels() as $channel) {
-            if (! $this->channelReady($channel)) {
+        foreach ($channels as $channel) {
+            $job = new ReportExceptionJob($channel, $report);
+            if ($async && $channel !== 'log' && $this->pushToQueue($queue, $job)) {
                 continue;
             }
 
-            $job = new ReportExceptionJob($channel, $report);
-            if ($async && $channel !== 'log') {
-                ApplicationContext::getContainer()
-                    ->get(DriverFactory::class)
-                    ->get($queue)
-                    ->push($job);
-            } else {
-                $job->handle();
-            }
+            $job->handle();
+        }
+    }
+
+    /**
+     * Returns false when the queue is unavailable so the caller can send synchronously.
+     */
+    protected function pushToQueue(string $queue, ReportExceptionJob $job): bool
+    {
+        try {
+            return ApplicationContext::getContainer()
+                ->get(DriverFactory::class)
+                ->get($queue)
+                ->push($job);
+        } catch (Throwable $exception) {
+            stdoutLogger()->warning('Exception notify queue push failed, sending synchronously: ' . $exception->getMessage());
+
+            return false;
         }
     }
 
@@ -184,50 +203,62 @@ class ExceptionNotify extends Manager
             return true;
         }
 
-        $token = config(sprintf('exception_notify.channels.%s.token', $channel));
+        $token = $this->config->get(sprintf('exception_notify.channels.%s.token', $channel));
 
         return is_string($token) && $token !== '';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function normalizeChannels(array|string $channels): array
+    {
+        if (is_string($channels)) {
+            $channels = explode(',', $channels);
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn ($channel): string => trim((string) $channel),
+            $channels
+        ))));
     }
 
     protected function createLogDriver(): LogChannel
     {
         return new LogChannel(
-            (string) config('exception_notify.channels.log.channel', 'default'),
-            (string) config('exception_notify.channels.log.level', 'error'),
+            (string) $this->config->get('exception_notify.channels.log.channel', 'default'),
+            (string) $this->config->get('exception_notify.channels.log.level', 'error'),
             'log'
         );
     }
 
     protected function createFeiShuDriver(): FeiShuChannel
     {
-        return new FeiShuChannel(
-            Factory::feiShu(arrayFilterFilled([
-                'token' => config('exception_notify.channels.feiShu.token'),
-                'secret' => config('exception_notify.channels.feiShu.secret'),
-            ])),
-            'feiShu'
-        );
+        return $this->createNotifyDriver(FeiShuChannel::class, 'feiShu', 'feiShu');
     }
 
     protected function createDingTalkDriver(): DingTalkChannel
     {
-        return new DingTalkChannel(
-            Factory::DingTalk(arrayFilterFilled([
-                'token' => config('exception_notify.channels.dingTalk.token'),
-                'secret' => config('exception_notify.channels.dingTalk.secret'),
-            ])),
-            'dingTalk'
-        );
+        return $this->createNotifyDriver(DingTalkChannel::class, 'dingTalk', 'DingTalk');
     }
 
     protected function createWeWorkDriver(): WeWorkChannel
     {
-        return new WeWorkChannel(
-            Factory::weWork(arrayFilterFilled([
-                'token' => config('exception_notify.channels.weWork.token'),
-                'secret' => config('exception_notify.channels.weWork.secret'),
-            ])),
-            'weWork'
-        );
+        return $this->createNotifyDriver(WeWorkChannel::class, 'weWork', 'weWork');
+    }
+
+    /**
+     * @template T of NotifyAbstractChannel
+     * @param class-string<T> $channelClass
+     * @return T
+     */
+    protected function createNotifyDriver(string $channelClass, string $name, string $factoryMethod): NotifyAbstractChannel
+    {
+        $client = Factory::{$factoryMethod}(arrayFilterFilled([
+            'token' => $this->config->get(sprintf('exception_notify.channels.%s.token', $name)),
+            'secret' => $this->config->get(sprintf('exception_notify.channels.%s.secret', $name)),
+        ]));
+
+        return new $channelClass($client, $name);
     }
 }

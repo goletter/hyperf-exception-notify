@@ -22,7 +22,7 @@ class RequestHeaderCollector extends Collector
     public function collect(): array
     {
         try {
-            return $this->request->getHeaders();
+            return $this->mask($this->request->getHeaders());
         } catch (Throwable $throwable) {
             return [];
         }

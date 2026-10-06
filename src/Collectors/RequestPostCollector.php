@@ -13,10 +13,7 @@ declare(strict_types=1);
 namespace Goletter\HyperfExceptionNotify\Collectors;
 
 use Hyperf\HttpServer\Contract\RequestInterface;
-use Hyperf\Stringable\Str;
 use Throwable;
-
-use function Hyperf\Collection\collect;
 
 class RequestPostCollector extends Collector
 {
@@ -25,17 +22,7 @@ class RequestPostCollector extends Collector
     public function collect(): array
     {
         try {
-            return collect($this->request->post())
-                ->transform(static function ($val, $key) {
-                    Str::is([
-                        'password',
-                        '*password',
-                        'password*',
-                    ], $key) and $val = '******';
-
-                    return $val;
-                })
-                ->all();
+            return $this->mask((array) $this->request->post());
         } catch (Throwable $throwable) {
             return [];
         }

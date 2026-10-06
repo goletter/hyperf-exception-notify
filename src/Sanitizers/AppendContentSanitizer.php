@@ -11,7 +11,7 @@ class AppendContentSanitizer
     public function handle(string $report, Closure $next, ?string $content = null): string
     {
         if ($content !== null && $content !== '') {
-            $report .= $content;
+            $report .= "\n" . $content;
         }
 
         return $next($report);

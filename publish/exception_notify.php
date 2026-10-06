@@ -87,11 +87,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Request fields (post / query / header keys) masked as ******.
+    | Case-insensitive, supports wildcards via Str::is().
+    |--------------------------------------------------------------------------
+    */
+    'mask_fields' => [
+        '*password*',
+        '*token*',
+        '*secret*',
+        'authorization',
+        'cookie',
+        'set-cookie',
+        'x-api-key',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Rate limiter (same exception fingerprint).
     |--------------------------------------------------------------------------
     */
     'rate_limiter' => [
-        'max_attempts' => (int) env('EXCEPTION_NOTIFY_LIMIT', env('APP_ENV') === 'prod' || env('APP_ENV') === 'production' ? 1 : 50),
+        'max_attempts' => (int) env('EXCEPTION_NOTIFY_LIMIT', in_array(env('APP_ENV'), ['prod', 'production'], true) ? 1 : 50),
         'decay_seconds' => (int) env('EXCEPTION_NOTIFY_DECAY', 300),
     ],
 
@@ -151,11 +167,12 @@ return [
             'atMobiles' => [],
             'atDingtalkIds' => [],
             'isAtAll' => false,
+            // Truncate first, then append the keyword, so the required keyword is never cut off.
             'sanitizers' => array_values(array_filter([
+                sprintf('%s:%s', LengthLimitSanitizer::class, 20000),
                 env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD')
                     ? sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_DINGTALK_KEYWORD'))
                     : null,
-                sprintf('%s:%s', LengthLimitSanitizer::class, 20000),
             ])),
         ],
 
