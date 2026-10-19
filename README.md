@@ -83,41 +83,24 @@ Hyperf 按顺序执行异常处理器，前面的处理器一旦调用 `stopProp
 
 ## 四、通知内容示例
 
-````text
-## [production] my-app exception
-
-- **Time**: 2026-10-06 22:45:12
-- **App**: my-app
-- **Env**: production
-- **Exception**: RuntimeException
-- **Message**: 库存不足，商品ID=1024
-- **File**: `/opt/www/app/Service/OrderService.php:88`
-- **URL**: https://api.example.com/v1/orders?page=1
-- **Method**: POST
-- **IP**: 113.88.12.34
-- **Route**: `/v1/orders`
-- **Action**: `App\Controller\OrderController@store`
-- **Duration**: 35ms
-
-### Request Post
-```json
-{
-    "goods_id": 1024,
-    "password": "******"
-}
+```text
+运行环境: test
+异常等级: Error
+追踪号 trace_id:
+20261016171903-bb29b95f01e2
+异常文件: /opt/www/vendor/hyperf/database/src/Connection.php
+异常行号: 1192
+异常时间: 2026-10-16 17:19:03
+请求URL:
+http://case-test.geekdance.cn/app-api/user/svc-cases?pageNum=1&pageSize=10
+详细日志文件: runtime/logs/hyperf-2026-10-16.log (请用 trace_id 检索)
+异常信息: SQLSTATE[42000]: Syntax error or access violation: 1055 ...
 ```
 
-### Trace
-```
-#0 /opt/www/app/Controller/OrderController.php(42): App\Service\OrderService->create(Array)
-#9 {main}
-```
-异常
-````
-
-- 命令行异常没有请求信息，URL、Post、Query 等部分不显示。
-- 堆栈会过滤掉 `vendor` 目录，只保留业务代码，最多 15 行。
-- Post / Query 每块最多约 1500 字符。
+- `trace_id` 取自请求上下文 `Context` 的 `trace_id`（由网关中间件写入）。没有时显示 `-`。
+- 命令行异常没有请求时，请求 URL 显示 `-`。
+- 日志路径默认 `runtime/logs/hyperf-{当天日期}.log`，可用 `EXCEPTION_NOTIFY_LOG_FILE` 覆盖，`{date}` 会换成 `Y-m-d`。
+- 飞书按纯文本发送，文件路径和 URL 会被识别成可点击链接。Post、Query、堆栈不再放进这条消息；需要完整采集数据时把 `format` 设为 `json`。
 
 ## 五、配置说明
 
@@ -150,8 +133,10 @@ Hyperf 按顺序执行异常处理器，前面的处理器一旦调用 `stopProp
 | --- | --- | --- | --- |
 | `async` | `EXCEPTION_NOTIFY_ASYNC` | `true` | 是否通过异步队列推送；`log` 渠道始终同步 |
 | `queue` | `EXCEPTION_NOTIFY_QUEUE` | `default` | 使用的队列池，对应 `config/autoload/async_queue.php` |
-| `format` | `EXCEPTION_NOTIFY_FORMAT` | `markdown` | `markdown` 为可读摘要；`json` 为全部采集数据 |
-| `title` | `EXCEPTION_NOTIFY_REPORT_TITLE` | `[环境] 应用名 exception` | 消息标题 |
+| `format` | `EXCEPTION_NOTIFY_FORMAT` | `markdown` | `markdown` 为上面的纯文本摘要；`json` 为全部采集数据 |
+| `title` | `EXCEPTION_NOTIFY_REPORT_TITLE` | `[环境] 应用名 exception` | 保留配置，默认正文不再展示 |
+| `level` | `EXCEPTION_NOTIFY_LEVEL` | `Error` | 正文里的「异常等级」 |
+| `log_file` | `EXCEPTION_NOTIFY_LOG_FILE` | `runtime/logs/hyperf-{date}.log` | 「详细日志文件」，`{date}` 为当天日期 |
 
 - 异步推送需要队列消费进程在运行，否则消息会积压在队列里。
 - 队列本身不可用（如推送到 Redis 失败）时，会自动改为同步发送。
@@ -316,7 +301,7 @@ Router::get('/test/exception', function () {
 | `ChoreCollector` | 时间、内存峰值 | 否 |
 | `PhpInfoCollector` | PHP 版本、SAPI | 否 |
 
-**注意**：`markdown` 格式只展示前 6 个采集器的内容。其它采集器（包括自定义采集器）的数据只在 `format=json` 时出现。
+**注意**：默认正文只包含运行环境、异常等级、trace_id、文件、行号、时间、请求 URL、日志文件和异常信息。其它采集器（包括自定义采集器）的数据只在 `format=json` 时出现。
 
 自定义采集器：
 
