@@ -163,11 +163,12 @@ class ExceptionNotify extends Manager
      */
     protected function dispatchReportExceptionJob(Throwable $throwable, array $channels): void
     {
-        $report = $this->collectorManager->toReport($throwable);
         $async = (bool) $this->config->get('exception_notify.async', true);
         $queue = (string) $this->config->get('exception_notify.queue', 'default');
 
         foreach ($channels as $channel) {
+            // 按渠道生成正文（飞书卡片 / 其它 Markdown）
+            $report = $this->collectorManager->toReport($throwable, $channel);
             $job = new ReportExceptionJob($channel, $report);
             if ($async && $channel !== 'log' && $this->pushToQueue($queue, $job)) {
                 continue;

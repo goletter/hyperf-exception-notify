@@ -134,6 +134,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | 异常信息最大长度（超出截断）.
+    |--------------------------------------------------------------------------
+    */
+    'message_max_length' => (int) env('EXCEPTION_NOTIFY_MESSAGE_MAX', 1800),
+
+    /*
+    |--------------------------------------------------------------------------
+    | 飞书卡片标题颜色：red / orange / yellow / green / blue / purple / grey
+    |--------------------------------------------------------------------------
+    */
+    'feishu_card_template' => env('EXCEPTION_NOTIFY_FEISHU_CARD_TEMPLATE', 'red'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Default channel name (used when report_channels is empty).
     |--------------------------------------------------------------------------
     */
@@ -161,12 +175,8 @@ return [
             'token' => env('EXCEPTION_NOTIFY_FEISHU_TOKEN'),
             'secret' => env('EXCEPTION_NOTIFY_FEISHU_SECRET'),
             'keyword' => env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'),
-            'sanitizers' => array_values(array_filter([
-                sprintf('%s:%s', LengthLimitSanitizer::class, 30720),
-                env('EXCEPTION_NOTIFY_FEISHU_KEYWORD')
-                    ? sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'))
-                    : null,
-            ])),
+            // 交互卡片不要用字符串截断 / 追加，关键词由 FeiShuChannel 写入 note
+            'sanitizers' => [],
         ],
 
         /**
