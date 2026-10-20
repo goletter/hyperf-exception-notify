@@ -30,7 +30,7 @@ php bin/hyperf.php vendor:publish goletter/hyperf-exception-notify
 钉钉群 → 群设置 → 机器人 → 添加「自定义」机器人，安全设置任选：
 
 - **加签**：复制 `SEC` 开头的密钥，填到 `EXCEPTION_NOTIFY_DINGTALK_SECRET`
-- **自定义关键词**：例如填 `异常`，同时填到 `EXCEPTION_NOTIFY_DINGTALK_KEYWORD`
+- **自定义关键词**：例如填 `异常`，同时填到 `EXCEPTION_NOTIFY_DINGTALK_KEYWORD`（若标题或正文里已包含该词，不会再追加到末尾）
 
 复制 Webhook 地址里 `access_token=` 后面的部分，填到 `EXCEPTION_NOTIFY_DINGTALK_TOKEN`。
 
@@ -78,7 +78,7 @@ Hyperf 按顺序执行异常处理器，前面的处理器一旦调用 `stopProp
 
 - **token**：Webhook 地址中的 key。钉钉是 `access_token=` 后面的值；企业微信是 `key=` 后面的值；飞书是 `/hook/` 后面的值。
 - **超长截断**：实际按上限的 90% 截断，结尾显示 `...`。企业微信上限较小，Post 参数和堆栈经常被截断。
-- **关键词**：钉钉、飞书设置了关键词安全校验时必须配置 `_KEYWORD`，会自动追加在消息末尾。
+- **关键词**：钉钉、飞书设置了关键词安全校验时必须配置 `_KEYWORD`。正文里已包含该词时不会再追加；不想在末尾出现「异常」时，可把关键词写进 `EXCEPTION_NOTIFY_REPORT_TITLE`，或改用加签（`_SECRET`）并清空 `_KEYWORD`。
 - **@人（钉钉）**：在配置文件 `channels.dingTalk` 中设置 `atMobiles`、`atDingtalkIds` 或 `isAtAll`。
 
 ## 四、通知内容示例
