@@ -73,46 +73,51 @@ Hyperf 按顺序执行异常处理器，前面的处理器一旦调用 `stopProp
 | --- | --- | --- | --- | --- |
 | 钉钉 | `dingTalk` | `EXCEPTION_NOTIFY_DINGTALK_TOKEN` / `_SECRET` / `_KEYWORD` | Markdown | 20000 |
 | 企业微信 | `weWork` | `EXCEPTION_NOTIFY_WEWORK_TOKEN` | Markdown | 4096 字节 |
-| 飞书 | `feiShu` | `EXCEPTION_NOTIFY_FEISHU_TOKEN` / `_SECRET` / `_KEYWORD` | 交互卡片 | 异常信息默认截断 1800 |
+| 飞书 | `feiShu` | `EXCEPTION_NOTIFY_FEISHU_TOKEN` / `_SECRET` / `_KEYWORD` | 纯文本 | 30720 |
 | 日志 | `log` | `EXCEPTION_NOTIFY_LOG_LEVEL` | 输出到控制台 | 无 |
 
 - **token**：Webhook 地址中的 key。钉钉是 `access_token=` 后面的值；企业微信是 `key=` 后面的值；飞书是 `/hook/` 后面的值。
 - **超长截断**：实际按上限的 90% 截断，结尾显示 `...`。企业微信上限较小，Post 参数和堆栈经常被截断。
-- **关键词**：钉钉、飞书设置了关键词安全校验时必须配置 `_KEYWORD`。钉钉追加在 Markdown 末尾；飞书追加在卡片底部备注。
+- **关键词**：钉钉、飞书设置了关键词安全校验时必须配置 `_KEYWORD`，会自动追加在消息末尾。
 - **@人（钉钉）**：在配置文件 `channels.dingTalk` 中设置 `atMobiles`、`atDingtalkIds` 或 `isAtAll`。
 
 ## 四、通知内容示例
 
-钉钉 / 企业微信（Markdown）：
+````text
+## [production] my-app exception
 
-```markdown
-### 🚨 [test] app exception
+- **Time**: 2026-10-17 14:16:21
+- **App**: my-app
+- **Env**: production
+- **Exception**: Exception
+- **Message**: 整体架构
+- **File**: `/opt/www/app/Service/OrderService.php:88`
+- **URL**: https://api.example.com/v1/orders?page=1
+- **Method**: POST
+- **IP**: 113.88.12.34
+- **Route**: `/v1/orders`
+- **Action**: `App\Controller\OrderController@store`
+- **Duration**: 35ms
 
-> **环境** test　|　**等级** Error　|　**时间** 2026-10-16 17:19:03
-
-**追踪号**
-`20261016171903-bb29b95f01e2`
-
-**异常位置**
-`/opt/www/vendor/hyperf/database/src/Connection.php:1192`
-
-**请求 URL**
-http://case-test.geekdance.cn/app-api/user/svc-cases?pageNum=1
-
-**详细日志**
-`runtime/logs/hyperf-2026-10-16.log`（请用 trace_id 检索）
-
-**异常信息**
-SQLSTATE[42000]: ...
+### Request Post
+```json
+{
+    "goods_id": 1024,
+    "password": "******"
+}
 ```
 
-飞书发送**红色交互卡片**：环境 / 等级 / 时间 / 行号四宫格，下方是追踪号、文件、可点击 URL、日志路径和异常信息；配置了关键词时显示在底部备注。
+### Trace
+```
+#0 /opt/www/app/Controller/OrderController.php(42): App\Service\OrderService->create(Array)
+#9 {main}
+```
+````
 
-- `trace_id` 取自请求上下文 `Context` 的 `trace_id`（由网关中间件写入）。没有时显示 `-`。
-- 命令行异常没有请求时，请求 URL 显示 `-`。
-- 日志路径默认 `runtime/logs/hyperf-{当天日期}.log`，可用 `EXCEPTION_NOTIFY_LOG_FILE` 覆盖。
-- 卡片颜色：`EXCEPTION_NOTIFY_FEISHU_CARD_TEMPLATE`（默认 `red`）。
-- Post、Query、堆栈不进这条消息；需要完整采集数据时把 `format` 设为 `json`。
+- 命令行异常没有请求信息时，URL、Post、Query 等部分不显示。
+- 堆栈会过滤掉 `vendor` 目录，只保留业务代码，最多 15 行。
+- Post / Query 每块最多约 1500 字符。
+- 飞书按纯文本发送；钉钉 / 企微按 Markdown 发送。
 
 ## 五、配置说明
 
@@ -145,12 +150,8 @@ SQLSTATE[42000]: ...
 | --- | --- | --- | --- |
 | `async` | `EXCEPTION_NOTIFY_ASYNC` | `true` | 是否通过异步队列推送；`log` 渠道始终同步 |
 | `queue` | `EXCEPTION_NOTIFY_QUEUE` | `default` | 使用的队列池，对应 `config/autoload/async_queue.php` |
-| `format` | `EXCEPTION_NOTIFY_FORMAT` | `markdown` | `markdown` 为上面的纯文本摘要；`json` 为全部采集数据 |
-| `title` | `EXCEPTION_NOTIFY_REPORT_TITLE` | `[环境] 应用名 exception` | 保留配置，默认正文不再展示 |
-| `level` | `EXCEPTION_NOTIFY_LEVEL` | `Error` | 正文里的「异常等级」 |
-| `log_file` | `EXCEPTION_NOTIFY_LOG_FILE` | `runtime/logs/hyperf-{date}.log` | 「详细日志文件」，`{date}` 为当天日期 |
-| `message_max_length` | `EXCEPTION_NOTIFY_MESSAGE_MAX` | `1800` | 异常信息截断长度 |
-| `feishu_card_template` | `EXCEPTION_NOTIFY_FEISHU_CARD_TEMPLATE` | `red` | 飞书卡片标题颜色 |
+| `format` | `EXCEPTION_NOTIFY_FORMAT` | `markdown` | `markdown` 为可读摘要；`json` 为全部采集数据 |
+| `title` | `EXCEPTION_NOTIFY_REPORT_TITLE` | `[环境] 应用名 exception` | 消息标题 |
 
 - 异步推送需要队列消费进程在运行，否则消息会积压在队列里。
 - 队列本身不可用（如推送到 Redis 失败）时，会自动改为同步发送。
@@ -315,7 +316,7 @@ Router::get('/test/exception', function () {
 | `ChoreCollector` | 时间、内存峰值 | 否 |
 | `PhpInfoCollector` | PHP 版本、SAPI | 否 |
 
-**注意**：默认正文只包含环境、等级、时间、trace_id、文件、行号、请求 URL、日志文件和异常信息。其它采集器（包括自定义采集器）的数据只在 `format=json` 时出现。
+**注意**：`markdown` 格式只展示 Application / Exception Basic / Request Basic / Post / Query / Trace 等内容。其它采集器（包括自定义采集器）的数据只在 `format=json` 时出现。
 
 自定义采集器：
 

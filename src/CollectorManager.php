@@ -77,21 +77,14 @@ class CollectorManager extends Fluent
             ->all();
     }
 
-    public function toReport(Throwable $throwable, ?string $channel = null): string
+    public function toReport(Throwable $throwable): string
     {
         $payload = $this->toPayload($throwable);
         $formatter = make(ReportFormatter::class);
         $format = (string) config('exception_notify.format', 'markdown');
 
-        if ($format === 'json') {
-            return $formatter->toJson($payload);
-        }
-
-        // 飞书用交互卡片，其它渠道用 Markdown
-        if ($channel === 'feiShu') {
-            return $formatter->toFeishuCard($payload, $throwable);
-        }
-
-        return $formatter->toMarkdown($payload, $throwable);
+        return $format === 'json'
+            ? $formatter->toJson($payload)
+            : $formatter->toMarkdown($payload, $throwable);
     }
 }

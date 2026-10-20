@@ -113,38 +113,10 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Report title (json / 关键词场景仍可用；默认正文不再展示标题).
+    | Report title.
     |--------------------------------------------------------------------------
     */
     'title' => env('EXCEPTION_NOTIFY_REPORT_TITLE', sprintf('[%s] %s exception', env('APP_ENV', 'local'), env('APP_NAME', 'app'))),
-
-    /*
-    |--------------------------------------------------------------------------
-    | 通知正文里的「异常等级」.
-    |--------------------------------------------------------------------------
-    */
-    'level' => env('EXCEPTION_NOTIFY_LEVEL', 'Error'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | 详细日志文件路径，{date} 替换为当天 Y-m-d.
-    |--------------------------------------------------------------------------
-    */
-    'log_file' => env('EXCEPTION_NOTIFY_LOG_FILE', 'runtime/logs/hyperf-{date}.log'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | 异常信息最大长度（超出截断）.
-    |--------------------------------------------------------------------------
-    */
-    'message_max_length' => (int) env('EXCEPTION_NOTIFY_MESSAGE_MAX', 1800),
-
-    /*
-    |--------------------------------------------------------------------------
-    | 飞书卡片标题颜色：red / orange / yellow / green / blue / purple / grey
-    |--------------------------------------------------------------------------
-    */
-    'feishu_card_template' => env('EXCEPTION_NOTIFY_FEISHU_CARD_TEMPLATE', 'red'),
 
     /*
     |--------------------------------------------------------------------------
@@ -175,8 +147,12 @@ return [
             'token' => env('EXCEPTION_NOTIFY_FEISHU_TOKEN'),
             'secret' => env('EXCEPTION_NOTIFY_FEISHU_SECRET'),
             'keyword' => env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'),
-            // 交互卡片不要用字符串截断 / 追加，关键词由 FeiShuChannel 写入 note
-            'sanitizers' => [],
+            'sanitizers' => array_values(array_filter([
+                sprintf('%s:%s', LengthLimitSanitizer::class, 30720),
+                env('EXCEPTION_NOTIFY_FEISHU_KEYWORD')
+                    ? sprintf('%s:%s', AppendContentSanitizer::class, env('EXCEPTION_NOTIFY_FEISHU_KEYWORD'))
+                    : null,
+            ])),
         ],
 
         /**
